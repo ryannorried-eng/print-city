@@ -6,7 +6,7 @@ from statistics import mean, median
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
-from app.models import Game, Pick
+from app.models import Game, Pick, PickScore
 
 
 def _safe_float(value: object) -> float | None:
@@ -55,10 +55,16 @@ def compute_clv_health(session: Session, days: int = 7) -> dict[str, object]:
         sport_rows = [(pick, game) for pick, game in rows if game.sport_key == sport_key]
         by_sport[sport_key] = _compute_bucket(sport_rows)
 
+    latest_scores = session.execute(select(PickScore)).scalars().all()
+    kept = [r for r in latest_scores if r.decision in {"KEEP", "WARN"}]
+    keep_rate = (len(kept) / len(latest_scores)) if latest_scores else 0.0
+
     return {
         "days": days,
         "window_start": window_start,
         "window_end": now_utc,
         **overall,
         "by_sport": by_sport,
+        "keep_rate": keep_rate,
+        "avg_pqs": (sum(float(r.pqs) for r in latest_scores) / len(latest_scores)) if latest_scores else 0.0,
     }
