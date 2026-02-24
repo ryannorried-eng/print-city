@@ -6,3 +6,4 @@ alembic
 pytest
 psycopg[binary]
 requests
+apscheduler==3.10.4
