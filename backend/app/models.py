@@ -29,6 +29,7 @@ class Game(Base):
 
     odds_groups: Mapped[list[OddsGroup]] = relationship(back_populates="game")
     odds_snapshots: Mapped[list[OddsSnapshot]] = relationship(back_populates="game")
+    picks: Mapped[list[Pick]] = relationship(back_populates="game")
 
 
 class OddsGroup(Base):
@@ -65,3 +66,40 @@ class OddsSnapshot(Base):
     group_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
 
     game: Mapped[Game] = relationship(back_populates="odds_snapshots")
+
+
+class Pick(Base):
+    __tablename__ = "picks"
+    __table_args__ = (
+        UniqueConstraint(
+            "game_id",
+            "market_key",
+            "point",
+            "side",
+            "best_book",
+            "captured_at_max",
+            name="uq_pick_snapshot",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    market_key: Mapped[str] = mapped_column(Text, nullable=False)
+    side: Mapped[str] = mapped_column(Text, nullable=False)
+    point: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    consensus_prob: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    best_decimal: Mapped[Decimal] = mapped_column(Numeric(12, 5), nullable=False)
+    best_book: Mapped[str] = mapped_column(Text, nullable=False)
+    ev: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    kelly_fraction: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    stake: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    consensus_books: Mapped[int] = mapped_column(Integer, nullable=False)
+    sharp_books: Mapped[int] = mapped_column(Integer, nullable=False)
+    captured_at_min: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    captured_at_max: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    game: Mapped[Game] = relationship(back_populates="picks")
