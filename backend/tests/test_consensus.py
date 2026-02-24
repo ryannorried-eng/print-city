@@ -17,9 +17,9 @@ from app.services.consensus import (
 )
 
 
-def _insert_game(session: Session, *, event_id: str) -> Game:
+def _insert_game(session: Session, *, event_id: str, sport_key: str = "basketball_nba") -> Game:
     game = Game(
-        sport_key="basketball_nba",
+        sport_key=sport_key,
         event_id=event_id,
         commence_time=datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc),
         home_team=f"{event_id}-home",
@@ -300,3 +300,51 @@ def test_latest_group_rows_stmt_reuses_single_point_sentinel_bindparam() -> None
     assert "point_sentinel" in sql
     assert "coalesce_" not in sql
     assert "point_sentinel" in compiled.params
+
+
+def test_soccer_h2h_requires_draw_for_complete_group(monkeypatch) -> None:
+    monkeypatch.setenv("CONSENSUS_MIN_BOOKS", "2")
+    monkeypatch.setenv("SHARP_BOOKS", "")
+
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        game = _insert_game(session, event_id="evt_soccer", sport_key="soccer_epl")
+        t1 = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+        t2 = t1 + timedelta(minutes=10)
+
+        for side, fair_prob, dec in [
+            ("HOME", "0.50", "2.10"),
+            ("AWAY", "0.30", "3.20"),
+            ("DRAW", "0.20", "3.60"),
+        ]:
+            _add_snapshot(session, game_id=game.id, captured_at=t1, market_key="h2h", bookmaker="booka", side=side, point=None, decimal=Decimal(dec), fair_prob=Decimal(fair_prob))
+
+        _add_snapshot(session, game_id=game.id, captured_at=t2, market_key="h2h", bookmaker="booka", side="HOME", point=None, decimal=Decimal("2.30"), fair_prob=Decimal("0.55"))
+        _add_snapshot(session, game_id=game.id, captured_at=t2, market_key="h2h", bookmaker="booka", side="AWAY", point=None, decimal=Decimal("3.10"), fair_prob=Decimal("0.45"))
+
+        for side, fair_prob, dec in [
+            ("HOME", "0.48", "2.05"),
+            ("AWAY", "0.32", "3.30"),
+            ("DRAW", "0.20", "3.50"),
+        ]:
+            _add_snapshot(session, game_id=game.id, captured_at=t1, market_key="h2h", bookmaker="bookb", side=side, point=None, decimal=Decimal(dec), fair_prob=Decimal(fair_prob))
+
+        session.commit()
+
+        views = build_market_views(get_latest_group_rows(session, "soccer_epl", "h2h"))
+        result = compute_consensus_for_view(views[("evt_soccer", "h2h", None)])
+
+        assert result.included_books == 2
+        assert result.consensus_probs is not None
+        assert list(result.consensus_probs.keys()) == [Side.AWAY, Side.DRAW, Side.HOME]
+        assert set(result.consensus_probs.keys()) == {Side.HOME, Side.AWAY, Side.DRAW}
+        assert result.best_decimal[Side.DRAW] == 3.6
+        assert result.best_book[Side.DRAW] == "booka"
+        assert result.captured_at_min == t1.replace(tzinfo=None)
+        assert result.captured_at_max == t1.replace(tzinfo=None)

@@ -13,9 +13,9 @@ from app.models import Base, Game, OddsSnapshot, Pick
 from app.services.picks import generate_consensus_picks
 
 
-def _insert_game(session: Session, *, event_id: str) -> Game:
+def _insert_game(session: Session, *, event_id: str, sport_key: str = "basketball_nba") -> Game:
     game = Game(
-        sport_key="basketball_nba",
+        sport_key=sport_key,
         event_id=event_id,
         commence_time=datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc),
         home_team="home",
@@ -137,3 +137,37 @@ def test_generate_picks_no_views_returns_empty_summary(monkeypatch) -> None:
             "skipped_low_ev": 0,
             "skipped_insufficient_books": 0,
         }
+
+
+def test_generate_picks_soccer_draw_candidate(monkeypatch) -> None:
+    monkeypatch.setenv("CONSENSUS_MIN_BOOKS", "2")
+    monkeypatch.setenv("PICK_MIN_BOOKS", "2")
+    monkeypatch.setenv("PICK_MIN_EV", "0.01")
+    monkeypatch.setenv("BANKROLL_PAPER", "10000")
+    monkeypatch.setenv("KELLY_MULTIPLIER", "0.25")
+    monkeypatch.setenv("KELLY_MAX_CAP", "0.05")
+    monkeypatch.setenv("SHARP_BOOKS", "")
+    get_settings.cache_clear()
+
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        t0 = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+        game = _insert_game(session, event_id="evt_soccer_draw", sport_key="soccer_epl")
+
+        for book, probs in [
+            ("booka", {"HOME": "0.45", "AWAY": "0.28", "DRAW": "0.27"}),
+            ("bookb", {"HOME": "0.43", "AWAY": "0.30", "DRAW": "0.27"}),
+        ]:
+            _add_snapshot(session, game_id=game.id, bookmaker=book, side="HOME", fair_prob=probs["HOME"], decimal="2.30", captured_at=t0)
+            _add_snapshot(session, game_id=game.id, bookmaker=book, side="AWAY", fair_prob=probs["AWAY"], decimal="3.30", captured_at=t0)
+            _add_snapshot(session, game_id=game.id, bookmaker=book, side="DRAW", fair_prob=probs["DRAW"], decimal="4.20" if book == "booka" else "4.10", captured_at=t0)
+
+        session.commit()
+
+        summary = generate_consensus_picks(session, sport_key="soccer_epl", market_key="h2h")
+        picks = session.query(Pick).filter(Pick.game_id == game.id).all()
+
+        assert summary["inserted"] >= 1
+        assert any(p.side == Side.DRAW.value for p in picks)
