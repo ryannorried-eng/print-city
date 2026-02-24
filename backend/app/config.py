@@ -14,6 +14,11 @@ class Settings:
     odds_markets: tuple[str, ...]
     odds_regions: str
     bookmaker_whitelist: tuple[str, ...]
+    sharp_books: tuple[str, ...]
+    sharp_weight: float
+    standard_weight: float
+    consensus_min_books: int
+    consensus_eps: float
     delta_hash_strict: bool
 
 
@@ -29,6 +34,20 @@ def _bool_env(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return float(raw.strip())
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return int(raw.strip())
 
 
 @lru_cache
@@ -49,5 +68,10 @@ def get_settings() -> Settings:
         odds_markets=_csv_env("ODDS_MARKETS", "h2h,spreads,totals"),
         odds_regions=os.getenv("ODDS_REGIONS", "us"),
         bookmaker_whitelist=_csv_env("BOOKMAKER_WHITELIST", ""),
+        sharp_books=_csv_env("SHARP_BOOKS", "pinnacle,circa,betonlineag,bovada"),
+        sharp_weight=_float_env("SHARP_WEIGHT", 2.0),
+        standard_weight=_float_env("STANDARD_WEIGHT", 1.0),
+        consensus_min_books=_int_env("CONSENSUS_MIN_BOOKS", 3),
+        consensus_eps=_float_env("CONSENSUS_EPS", 1e-9),
         delta_hash_strict=_bool_env("DELTA_HASH_STRICT", True),
     )

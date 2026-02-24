@@ -5,6 +5,12 @@ PYTEST := $(VENV)/bin/pytest
 UVICORN := $(VENV)/bin/uvicorn
 ALEMBIC := $(VENV)/bin/alembic
 
+ifeq ("$(wildcard .venv/bin/python)","")
+	PY=python3
+else
+	PY=.venv/bin/python
+endif
+
 .PHONY: venv install test run migrate migrate-up migrate-down migrate-revision
 
 venv:
@@ -15,10 +21,10 @@ install: venv
 	$(PIP) install -r backend/requirements.txt
 
 test:
-	cd backend && ../$(PYTEST) -q
+	cd backend && $(PY) -m pytest -q
 
 run:
-	cd backend && ../$(UVICORN) app.main:app --reload
+	cd backend && $(PY) -m uvicorn app.main:app --reload
 
 migrate-up:
 	cd backend && ../$(ALEMBIC) -c alembic.ini upgrade head
