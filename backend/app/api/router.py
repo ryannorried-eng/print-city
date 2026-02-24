@@ -1,6 +1,8 @@
 from fastapi import APIRouter
 
+from app.api.consensus import router as consensus_router
 from app.api.odds import router as odds_router
 
 api_router = APIRouter()
 api_router.include_router(odds_router)
+api_router.include_router(consensus_router)
