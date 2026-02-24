@@ -75,6 +75,18 @@ def compute_fair_probs_for_group(implied_probs: list[float], epsilon: float = 1e
     return fair_probs
 
 
+def parse_commence_time_to_utc(commence_time: str) -> datetime:
+    parsed = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def sort_group_key(event_id: str, group_key: tuple[str, str, float | None]) -> tuple[str, str, str, float]:
+    market_key, bookmaker, point = group_key
+    return (event_id, market_key, bookmaker, float("-inf") if point is None else point)
+
+
 def ingest_odds_for_sport(session: "Session", sport_key: str) -> dict:
     from sqlalchemy import select
 
@@ -111,7 +123,7 @@ def ingest_odds_for_sport(session: "Session", sport_key: str) -> dict:
                 game = Game(
                     sport_key=event["sport_key"],
                     event_id=event["id"],
-                    commence_time=datetime.fromisoformat(event["commence_time"].replace("Z", "+00:00")),
+                    commence_time=parse_commence_time_to_utc(event["commence_time"]),
                     home_team=event["home_team"],
                     away_team=event["away_team"],
                 )
@@ -120,18 +132,18 @@ def ingest_odds_for_sport(session: "Session", sport_key: str) -> dict:
                 summary["games_upserted"] += 1
             else:
                 game.sport_key = event["sport_key"]
-                game.commence_time = datetime.fromisoformat(event["commence_time"].replace("Z", "+00:00"))
+                game.commence_time = parse_commence_time_to_utc(event["commence_time"])
                 game.home_team = event["home_team"]
                 game.away_team = event["away_team"]
                 summary["games_upserted"] += 1
 
-            for book in event.get("bookmakers", []):
+            for book in sorted(event.get("bookmakers", []), key=lambda b: b["key"]):
                 bookmaker_key = book["key"]
                 if bookmaker_filter and bookmaker_key not in bookmaker_filter:
                     continue
 
                 grouped_outcomes: dict[tuple[str, str, float | None], list[dict]] = defaultdict(list)
-                for market in book.get("markets", []):
+                for market in sorted(book.get("markets", []), key=lambda m: m["key"]):
                     market_key = market["key"]
                     if market_key not in settings.odds_markets:
                         continue
@@ -156,7 +168,10 @@ def ingest_odds_for_sport(session: "Session", sport_key: str) -> dict:
                             }
                         )
 
-                for (market_key, bookmaker, point), side_prices in grouped_outcomes.items():
+                for market_key, bookmaker, point in sorted(
+                    grouped_outcomes.keys(), key=lambda key: sort_group_key(event["id"], key)
+                ):
+                    side_prices = sorted(grouped_outcomes[(market_key, bookmaker, point)], key=lambda sp: sp["side"])
                     _, group_hash = build_normalized_group_representation(
                         event_id=event["id"],
                         market_key=market_key,
