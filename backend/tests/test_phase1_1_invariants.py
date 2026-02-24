@@ -17,7 +17,7 @@ from app.services.ingest import (
 
 
 def test_side_enum_values_are_canonical_uppercase() -> None:
-    assert [side.value for side in Side] == ["HOME", "AWAY", "OVER", "UNDER"]
+    assert [side.value for side in Side] == ["HOME", "AWAY", "DRAW", "OVER", "UNDER"]
 
 
 def test_parse_commence_time_normalizes_to_utc_aware() -> None:

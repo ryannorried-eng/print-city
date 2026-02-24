@@ -10,5 +10,6 @@ class MarketKey(StrEnum):
 class Side(StrEnum):
     HOME = "HOME"
     AWAY = "AWAY"
+    DRAW = "DRAW"
     OVER = "OVER"
     UNDER = "UNDER"

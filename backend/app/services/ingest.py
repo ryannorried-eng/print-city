@@ -17,13 +17,22 @@ from app.domain.enums import Side
 from app.services.quota import record_quota
 
 
-def normalize_side(event_home: str, event_away: str, market_key: str, outcome_name: str) -> Side:
+def normalize_side(
+    event_home: str,
+    event_away: str,
+    market_key: str,
+    outcome_name: str,
+    sport_key: str | None = None,
+) -> Side:
     market = market_key.lower()
+    normalized_outcome = outcome_name.strip().lower()
     if market in {"h2h", "spreads"}:
-        if outcome_name.strip().lower() == event_home.strip().lower():
+        if normalized_outcome == event_home.strip().lower():
             return Side.HOME
-        if outcome_name.strip().lower() == event_away.strip().lower():
+        if normalized_outcome == event_away.strip().lower():
             return Side.AWAY
+        if market == "h2h" and sport_key is not None and sport_key.startswith("soccer_") and normalized_outcome == "draw":
+            return Side.DRAW
         raise ValueError(
             f"Could not map team outcome '{outcome_name}' to home='{event_home}' or away='{event_away}'"
         )
@@ -153,6 +162,7 @@ def ingest_odds_for_sport(session: "Session", sport_key: str) -> dict:
                             event_away=event["away_team"],
                             market_key=market_key,
                             outcome_name=outcome["name"],
+                            sport_key=event["sport_key"],
                         )
                         point = outcome.get("point")
                         american = outcome.get("price")

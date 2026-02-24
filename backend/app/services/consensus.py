@@ -66,9 +66,14 @@ class ConsensusResult(BaseModel):
     captured_at_max: datetime
 
 
-def _required_sides(market_key: str) -> set[Side]:
+def _required_sides(sport_key: str, market_key: str) -> set[Side]:
     market = MarketKey(market_key)
-    if market in {MarketKey.H2H, MarketKey.SPREADS}:
+    # Soccer h2h is a 3-way market (HOME/AWAY/DRAW); other h2h markets remain 2-way.
+    if market == MarketKey.H2H:
+        if sport_key.startswith("soccer_"):
+            return {Side.HOME, Side.AWAY, Side.DRAW}
+        return {Side.HOME, Side.AWAY}
+    if market == MarketKey.SPREADS:
         return {Side.HOME, Side.AWAY}
     return {Side.OVER, Side.UNDER}
 
@@ -114,7 +119,7 @@ def _build_latest_group_rows_stmt(sport_key: str, market_key: str):
             per_timestamp_subq.c.point_key,
             func.max(per_timestamp_subq.c.captured_at).label("captured_at"),
         )
-        .where(per_timestamp_subq.c.side_count >= 2)
+        .where(per_timestamp_subq.c.side_count >= bindparam("required_side_count"))
         .group_by(
             per_timestamp_subq.c.game_id,
             per_timestamp_subq.c.market_key,
@@ -152,7 +157,8 @@ def _build_latest_group_rows_stmt(sport_key: str, market_key: str):
 
 def get_latest_group_rows(session: Session, sport_key: str, market_key: str) -> list[OddsSnapshotRow]:
     stmt = _build_latest_group_rows_stmt(sport_key=sport_key, market_key=market_key)
-    rows = session.execute(stmt).all()
+    required_count = len(_required_sides(sport_key=sport_key, market_key=market_key))
+    rows = session.execute(stmt, {"required_side_count": required_count}).all()
 
     return [
         OddsSnapshotRow(
@@ -187,7 +193,7 @@ def build_market_views(rows: list[OddsSnapshotRow]) -> dict[tuple[str, str, floa
     output: dict[tuple[str, str, float | None], MarketView] = {}
     for key in sorted(grouped.keys(), key=lambda x: (x[0], x[1], x[2] is not None, x[2] if x[2] is not None else -1)):
         view_rows = grouped[key]
-        required = _required_sides(view_rows[0].market_key)
+        required = _required_sides(view_rows[0].sport_key, view_rows[0].market_key)
 
         by_book: dict[str, dict[Side, OddsSnapshotRow]] = {}
         for row in view_rows:
