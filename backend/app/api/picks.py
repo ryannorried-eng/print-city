@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.db import get_db
 from app.domain.enums import MarketKey
+from app.services.market_unlock import enforce_market_allowed
 from app.services.picks import generate_consensus_picks, list_picks
 
 router = APIRouter(tags=["picks"])
@@ -15,8 +17,30 @@ def generate_picks(
     sport_key: str = Query(...),
     market_key: MarketKey = Query(...),
     db: Session = Depends(get_db),
-) -> dict[str, int]:
-    return generate_consensus_picks(session=db, sport_key=sport_key, market_key=market_key.value)
+) -> dict[str, object]:
+    settings = get_settings()
+    allowed, reason = enforce_market_allowed(db, settings, market_key.value)
+    if not allowed and settings.markets_unlock_mode == "gate":
+        assert reason is not None
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"market '{market_key.value}' locked until clv_computed_count >= {reason['threshold']} "
+                f"(currently {reason['clv_computed_count']}). allowed: {reason['allowed_markets']}"
+            ),
+        )
+
+    result = generate_consensus_picks(session=db, sport_key=sport_key, market_key=market_key.value)
+    if not allowed and settings.markets_unlock_mode == "warn":
+        assert reason is not None
+        return {
+            **result,
+            "warning": (
+                f"market '{market_key.value}' locked until clv_computed_count >= {reason['threshold']} "
+                f"(currently {reason['clv_computed_count']}). allowed: {reason['allowed_markets']}"
+            ),
+        }
+    return result
 
 
 @router.get("/picks/latest")

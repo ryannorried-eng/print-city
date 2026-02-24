@@ -81,9 +81,7 @@ def test_run_cycle_and_logging(monkeypatch) -> None:
     assert ingest_calls == ["basketball_nba", "icehockey_nhl"]
     assert picks_calls == [
         ("basketball_nba", "h2h"),
-        ("basketball_nba", "totals"),
         ("icehockey_nhl", "h2h"),
-        ("icehockey_nhl", "totals"),
     ]
     assert len(runs) == 4
     assert sorted(run.run_type for run in runs) == ["clv", "cycle", "ingest", "picks"]

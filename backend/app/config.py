@@ -34,6 +34,8 @@ class Settings:
     sched_max_concurrent: int
     sports_autorun: str
     markets_autorun: str
+    markets_unlock_clv_min: int
+    markets_unlock_mode: str
     sched_require_db: bool
 
 
@@ -108,5 +110,7 @@ def get_settings() -> Settings:
         sched_max_concurrent=_int_env("SCHED_MAX_CONCURRENT", 1),
         sports_autorun=os.getenv("SPORTS_AUTORUN", ""),
         markets_autorun=os.getenv("MARKETS_AUTORUN", "h2h"),
+        markets_unlock_clv_min=_int_env("MARKETS_UNLOCK_CLV_MIN", 100),
+        markets_unlock_mode=os.getenv("MARKETS_UNLOCK_MODE", "gate").strip().lower() or "gate",
         sched_require_db=_bool_env("SCHED_REQUIRE_DB", True),
     )

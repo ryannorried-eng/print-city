@@ -11,6 +11,7 @@ from app.config import Settings
 from app.models import Game, Pick, PipelineRun
 from app.services.clv import compute_pick_clv
 from app.services.ingest import ingest_odds_for_sport
+from app.services.market_unlock import allowed_markets, get_clv_computed_count
 from app.services.picks import generate_consensus_picks
 
 
@@ -88,12 +89,53 @@ def run_ingest(session: Session, settings: Settings) -> dict:
 
 def run_picks(session: Session, settings: Settings) -> dict:
     sports = resolve_sports(settings)
-    markets = resolve_markets(settings)
+    requested_markets = resolve_markets(settings)
+    allowed = sorted(dict.fromkeys(allowed_markets(session, settings)))
+    used_markets = sorted(set(requested_markets).intersection(allowed))
+    skipped_markets = sorted(set(requested_markets).difference(used_markets))
+    clv_count = get_clv_computed_count(session)
+
+    market_lock: dict[str, object] = {
+        "clv_computed_count": clv_count,
+        "threshold": settings.markets_unlock_clv_min,
+        "allowed_markets": allowed,
+        "requested_markets": requested_markets,
+        "used_markets": used_markets,
+        "skipped_markets": skipped_markets,
+    }
+
+    if settings.markets_unlock_mode == "warn":
+        used_markets = requested_markets
+        market_lock["used_markets"] = used_markets
+        market_lock["skipped_markets"] = []
+        market_lock["warning"] = (
+            "market_unlock_warn_mode: requested markets were allowed despite lock state"
+            if skipped_markets
+            else None
+        )
+
+    if not used_markets:
+        return {
+            "total_views": 0,
+            "candidates": 0,
+            "inserted": 0,
+            "skipped_existing": 0,
+            "skipped_low_ev": 0,
+            "skipped_insufficient_books": 0,
+            "sports": sports,
+            "markets": used_markets,
+            "per_sport_market": {},
+            "errors": {},
+            "errors_count": 0,
+            "skipped_due_to_market_lock": True,
+            "market_lock": market_lock,
+        }
+
     per_pair: dict[str, dict] = {}
     errors: dict[str, str] = {}
 
     for sport in sports:
-        for market in markets:
+        for market in used_markets:
             key = f"{sport}:{market}"
             try:
                 per_pair[key] = generate_consensus_picks(session=session, sport_key=sport, market_key=market)
@@ -114,10 +156,11 @@ def run_picks(session: Session, settings: Settings) -> dict:
     return {
         **totals,
         "sports": sports,
-        "markets": markets,
+        "markets": used_markets,
         "per_sport_market": per_pair,
         "errors": errors,
         "errors_count": len(errors),
+        "market_lock": market_lock,
     }
 
 
