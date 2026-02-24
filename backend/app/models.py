@@ -1,7 +1,67 @@
-from sqlalchemy.orm import DeclarativeBase
+from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal
+
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
-    """Declarative base for future ORM models."""
-
     pass
+
+
+class Game(Base):
+    __tablename__ = "games"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sport_key: Mapped[str] = mapped_column(Text, nullable=False)
+    event_id: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    commence_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    home_team: Mapped[str] = mapped_column(Text, nullable=False)
+    away_team: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    odds_groups: Mapped[list[OddsGroup]] = relationship(back_populates="game")
+    odds_snapshots: Mapped[list[OddsSnapshot]] = relationship(back_populates="game")
+
+
+class OddsGroup(Base):
+    __tablename__ = "odds_groups"
+    __table_args__ = (
+        UniqueConstraint("game_id", "market_key", "bookmaker", "point", name="uq_odds_group"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False, index=True)
+    market_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    bookmaker: Mapped[str] = mapped_column(Text, nullable=False)
+    point: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    last_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    last_captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    game: Mapped[Game] = relationship(back_populates="odds_groups")
+
+
+class OddsSnapshot(Base):
+    __tablename__ = "odds_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id"), nullable=False, index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    market_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    bookmaker: Mapped[str] = mapped_column(Text, nullable=False)
+    side: Mapped[str] = mapped_column(String(16), nullable=False)
+    point: Mapped[Decimal | None] = mapped_column(Numeric(10, 3), nullable=True)
+    american: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    decimal: Mapped[Decimal | None] = mapped_column(Numeric(10, 5), nullable=True)
+    implied_prob: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    fair_prob: Mapped[Decimal] = mapped_column(Numeric(12, 8), nullable=False)
+    group_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+
+    game: Mapped[Game] = relationship(back_populates="odds_snapshots")
