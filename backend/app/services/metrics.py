@@ -6,6 +6,7 @@ from statistics import mean, median
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
+from app.eval.service import gates_report, pqs_clv_report
 from app.models import Game, Pick, PickScore
 
 
@@ -59,6 +60,9 @@ def compute_clv_health(session: Session, days: int = 7) -> dict[str, object]:
     kept = [r for r in latest_scores if r.decision in {"KEEP", "WARN"}]
     keep_rate = (len(kept) / len(latest_scores)) if latest_scores else 0.0
 
+    eval_pqs = pqs_clv_report(session, min_n=5)
+    eval_gates = gates_report(session, min_n=5)
+
     return {
         "days": days,
         "window_start": window_start,
@@ -67,4 +71,11 @@ def compute_clv_health(session: Session, days: int = 7) -> dict[str, object]:
         "by_sport": by_sport,
         "keep_rate": keep_rate,
         "avg_pqs": (sum(float(r.pqs) for r in latest_scores) / len(latest_scores)) if latest_scores else 0.0,
+        "eval_summary": {
+            "eval_window_start": window_start,
+            "eval_window_end": now_utc,
+            "pqs_spearman": eval_pqs.get("spearman") if isinstance(eval_pqs, dict) else None,
+            "pqs_bin_table": eval_pqs.get("bins", [])[:3] if isinstance(eval_pqs, dict) else [],
+            "top_drop_reasons": eval_gates.get("drop_reasons", [])[:3] if isinstance(eval_gates, dict) else [],
+        },
     }

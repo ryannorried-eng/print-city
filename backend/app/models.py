@@ -176,3 +176,18 @@ class ClvSportStat(Base):
     sharpe_like: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     is_weak: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class CalibrationRun(Base):
+    __tablename__ = "calibration_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    eval_window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    eval_window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    pqs_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    current_config_snapshot_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    proposed_config_patch_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    rationale_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
