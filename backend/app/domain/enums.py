@@ -12,3 +12,9 @@ class Side(StrEnum):
     AWAY = "AWAY"
     OVER = "OVER"
     UNDER = "UNDER"
+
+
+class PickScoreDecision(StrEnum):
+    KEEP = "KEEP"
+    DROP = "DROP"
+    WARN = "WARN"

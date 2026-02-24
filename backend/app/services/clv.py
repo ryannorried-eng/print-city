@@ -262,3 +262,36 @@ def list_latest_clv(session: Session, limit: int = 50) -> list[dict[str, object]
         )
 
     return output
+
+
+
+def list_clv_sport_stats(session: Session, limit: int = 100) -> list[dict[str, object]]:
+    from app.models import ClvSportStat
+
+    rows = (
+        session.execute(
+            select(ClvSportStat)
+            .order_by(desc(ClvSportStat.as_of), desc(ClvSportStat.id))
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
+    return [
+        {
+            "sport_key": row.sport_key,
+            "market_key": row.market_key,
+            "side_type": row.side_type,
+            "window_size": row.window_size,
+            "as_of": row.as_of,
+            "n": row.n,
+            "mean_market_clv_bps": float(row.mean_market_clv_bps),
+            "median_market_clv_bps": float(row.median_market_clv_bps),
+            "pct_positive_market_clv": float(row.pct_positive_market_clv),
+            "mean_same_book_clv_bps": float(row.mean_same_book_clv_bps) if row.mean_same_book_clv_bps is not None else None,
+            "sharpe_like": float(row.sharpe_like) if row.sharpe_like is not None else None,
+            "is_weak": bool(row.is_weak),
+            "last_updated_at": row.last_updated_at,
+        }
+        for row in rows
+    ]

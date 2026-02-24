@@ -5,6 +5,7 @@ from app.api.consensus import router as consensus_router
 from app.api.odds import router as odds_router
 from app.api.picks import router as picks_router
 from app.api.pipeline import router as pipeline_router
+from app.api.pqs import router as pqs_router
 from app.api.metrics import router as metrics_router
 from app.api.system import router as system_router
 
@@ -17,3 +18,5 @@ api_router.include_router(clv_router)
 api_router.include_router(pipeline_router)
 api_router.include_router(metrics_router)
 api_router.include_router(system_router)
+
+api_router.include_router(pqs_router)

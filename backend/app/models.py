@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from app.domain.enums import PickScoreDecision
 
 
 class Base(DeclarativeBase):
@@ -124,3 +126,53 @@ class PipelineRun(Base):
     markets: Mapped[str] = mapped_column(Text, nullable=False, default="")
     stats_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class PickScore(Base):
+    __tablename__ = "pick_scores"
+    __table_args__ = (
+        UniqueConstraint("pick_id", "version", name="uq_pick_scores_pick_version"),
+        Index("ix_pick_scores_version_scored_at", "version", "scored_at"),
+        Index("ix_pick_scores_decision", "decision"),
+        Index("ix_pick_scores_pqs", "pqs"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    pick_id: Mapped[int] = mapped_column(ForeignKey("picks.id"), nullable=False, index=True)
+    scored_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    version: Mapped[str] = mapped_column(String(32), nullable=False)
+    pqs: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    components_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    features_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    drop_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
+class ClvSportStat(Base):
+    __tablename__ = "clv_sport_stats"
+    __table_args__ = (
+        UniqueConstraint(
+            "sport_key",
+            "market_key",
+            "side_type",
+            "window_size",
+            "as_of",
+            name="uq_clv_sport_stats_scope",
+        ),
+        Index("ix_clv_sport_stats_lookup", "sport_key", "market_key", "side_type", "as_of"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sport_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    market_key: Mapped[str] = mapped_column(String(32), nullable=False)
+    side_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    window_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    as_of: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    n: Mapped[int] = mapped_column(Integer, nullable=False)
+    mean_market_clv_bps: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    median_market_clv_bps: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    pct_positive_market_clv: Mapped[Decimal] = mapped_column(Numeric(8, 6), nullable=False)
+    mean_same_book_clv_bps: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+    sharpe_like: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
+    is_weak: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

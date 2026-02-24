@@ -8,6 +8,7 @@ from sqlalchemy import and_, desc, select
 from sqlalchemy.orm import Session
 
 from app.config import Settings
+from app.intelligence.priors import recompute_clv_sport_stats
 from app.models import Game, Pick, PipelineRun
 from app.services.clv import compute_pick_clv
 from app.services.ingest import ingest_odds_for_sport
@@ -88,6 +89,7 @@ def run_ingest(session: Session, settings: Settings) -> dict:
 
 
 def run_picks(session: Session, settings: Settings) -> dict:
+    prior_stats = recompute_clv_sport_stats(session, settings)
     sports = resolve_sports(settings)
     requested_markets = resolve_markets(settings)
     allowed = sorted(dict.fromkeys(allowed_markets(session, settings)))
@@ -161,6 +163,7 @@ def run_picks(session: Session, settings: Settings) -> dict:
         "errors": errors,
         "errors_count": len(errors),
         "market_lock": market_lock,
+        "prior_stats": prior_stats,
     }
 
 
