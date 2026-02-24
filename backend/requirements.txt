@@ -5,3 +5,4 @@ sqlalchemy
 alembic
 pytest
 psycopg[binary]
+requests

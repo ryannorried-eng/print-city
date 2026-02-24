@@ -5,7 +5,7 @@ PYTEST := $(VENV)/bin/pytest
 UVICORN := $(VENV)/bin/uvicorn
 ALEMBIC := $(VENV)/bin/alembic
 
-.PHONY: venv install test run migrate-up migrate-down migrate-revision
+.PHONY: venv install test run migrate migrate-up migrate-down migrate-revision
 
 venv:
 	$(PYTHON) -m venv $(VENV)
@@ -28,3 +28,7 @@ migrate-down:
 
 migrate-revision:
 	cd backend && ../$(ALEMBIC) -c alembic.ini revision -m "$(m)"
+
+
+migrate:
+	cd backend && ../$(ALEMBIC) -c alembic.ini upgrade head

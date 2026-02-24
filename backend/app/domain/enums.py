@@ -8,7 +8,7 @@ class MarketKey(StrEnum):
 
 
 class Side(StrEnum):
-    HOME = "home"
-    AWAY = "away"
-    OVER = "over"
-    UNDER = "under"
+    HOME = "HOME"
+    AWAY = "AWAY"
+    OVER = "OVER"
+    UNDER = "UNDER"
