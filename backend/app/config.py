@@ -26,6 +26,15 @@ class Settings:
     kelly_multiplier: float
     kelly_max_cap: float
     delta_hash_strict: bool
+    enable_scheduler: bool
+    sched_ingest_interval_sec: int
+    sched_picks_interval_sec: int
+    sched_clv_interval_sec: int
+    sched_jitter_sec: int
+    sched_max_concurrent: int
+    sports_autorun: str
+    markets_autorun: str
+    sched_require_db: bool
 
 
 def _csv_env(name: str, default: str = "") -> tuple[str, ...]:
@@ -91,4 +100,13 @@ def get_settings() -> Settings:
         kelly_multiplier=_float_env("KELLY_MULTIPLIER", 0.25),
         kelly_max_cap=_float_env("KELLY_MAX_CAP", 0.05),
         delta_hash_strict=_bool_env("DELTA_HASH_STRICT", True),
+        enable_scheduler=_bool_env("ENABLE_SCHEDULER", False),
+        sched_ingest_interval_sec=_int_env("SCHED_INGEST_INTERVAL_SEC", 600),
+        sched_picks_interval_sec=_int_env("SCHED_PICKS_INTERVAL_SEC", 600),
+        sched_clv_interval_sec=_int_env("SCHED_CLV_INTERVAL_SEC", 1800),
+        sched_jitter_sec=_int_env("SCHED_JITTER_SEC", 30),
+        sched_max_concurrent=_int_env("SCHED_MAX_CONCURRENT", 1),
+        sports_autorun=os.getenv("SPORTS_AUTORUN", ""),
+        markets_autorun=os.getenv("MARKETS_AUTORUN", "h2h"),
+        sched_require_db=_bool_env("SCHED_REQUIRE_DB", True),
     )

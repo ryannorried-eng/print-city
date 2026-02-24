@@ -11,7 +11,7 @@ else
 	PY=.venv/bin/python
 endif
 
-.PHONY: venv install test run migrate migrate-up migrate-down migrate-revision
+.PHONY: venv install test run run-scheduler migrate migrate-up migrate-down migrate-revision
 
 venv:
 	$(PYTHON) -m venv $(VENV)
@@ -25,6 +25,9 @@ test:
 
 run:
 	cd backend && $(PY) -m uvicorn app.main:app --reload
+
+run-scheduler:
+	cd backend && ENABLE_SCHEDULER=true $(PY) -m uvicorn app.main:app --reload
 
 migrate-up:
 	cd backend && ../$(ALEMBIC) -c alembic.ini upgrade head
