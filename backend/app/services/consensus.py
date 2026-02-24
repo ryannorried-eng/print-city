@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel
-from sqlalchemy import and_, func, select
+from sqlalchemy import Numeric, and_, bindparam, func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -73,18 +73,24 @@ def _required_sides(market_key: str) -> set[Side]:
     return {Side.OVER, Side.UNDER}
 
 
-def get_latest_group_rows(session: Session, sport_key: str, market_key: str) -> list[OddsSnapshotRow]:
+POINT_SENTINEL = -999999
+
+
+def _build_latest_group_rows_stmt(sport_key: str, market_key: str):
     market = MarketKey(market_key)
 
-    # Select the latest COMPLETE bookmaker group per (game, market, bookmaker, point).
-    # This prevents mixing sides from different timestamps within a bookmaker group.
-    # Consensus and best-odds are then computed from this same selected row set.
+    # Reuse one shared bindparam object for coalesce(point, sentinel) across
+    # SELECT/GROUP BY/JOIN so Postgres sees the exact same expression and
+    # avoids GROUP BY mismatches from auto-generated bind names.
+    sentinel = bindparam("point_sentinel", POINT_SENTINEL, type_=Numeric())
+    point_key_expr = func.coalesce(OddsSnapshot.point, sentinel)
+
     per_timestamp_subq = (
         select(
             OddsSnapshot.game_id.label("game_id"),
             OddsSnapshot.market_key.label("market_key"),
             OddsSnapshot.bookmaker.label("bookmaker"),
-            func.coalesce(OddsSnapshot.point, -999999).label("point_key"),
+            point_key_expr.label("point_key"),
             OddsSnapshot.captured_at.label("captured_at"),
             func.count(func.distinct(OddsSnapshot.side)).label("side_count"),
         )
@@ -94,7 +100,7 @@ def get_latest_group_rows(session: Session, sport_key: str, market_key: str) -> 
             OddsSnapshot.game_id,
             OddsSnapshot.market_key,
             OddsSnapshot.bookmaker,
-            func.coalesce(OddsSnapshot.point, -999999),
+            point_key_expr,
             OddsSnapshot.captured_at,
         )
         .subquery()
@@ -118,7 +124,7 @@ def get_latest_group_rows(session: Session, sport_key: str, market_key: str) -> 
         .subquery()
     )
 
-    rows = session.execute(
+    return (
         select(Game, OddsSnapshot)
         .join(OddsSnapshot, OddsSnapshot.game_id == Game.id)
         .join(
@@ -127,7 +133,7 @@ def get_latest_group_rows(session: Session, sport_key: str, market_key: str) -> 
                 OddsSnapshot.game_id == latest_complete_subq.c.game_id,
                 OddsSnapshot.market_key == latest_complete_subq.c.market_key,
                 OddsSnapshot.bookmaker == latest_complete_subq.c.bookmaker,
-                func.coalesce(OddsSnapshot.point, -999999) == latest_complete_subq.c.point_key,
+                point_key_expr == latest_complete_subq.c.point_key,
                 OddsSnapshot.captured_at == latest_complete_subq.c.captured_at,
             ),
         )
@@ -141,7 +147,12 @@ def get_latest_group_rows(session: Session, sport_key: str, market_key: str) -> 
             OddsSnapshot.side.asc(),
             OddsSnapshot.id.desc(),
         )
-    ).all()
+    )
+
+
+def get_latest_group_rows(session: Session, sport_key: str, market_key: str) -> list[OddsSnapshotRow]:
+    stmt = _build_latest_group_rows_stmt(sport_key=sport_key, market_key=market_key)
+    rows = session.execute(stmt).all()
 
     return [
         OddsSnapshotRow(

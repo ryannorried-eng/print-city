@@ -118,3 +118,22 @@ def test_generate_picks_ev_kelly_idempotent_and_min_books(monkeypatch) -> None:
         assert summary2["inserted"] == 0
         assert summary2["skipped_existing"] == 1
         assert session.query(Pick).count() == 1
+
+
+def test_generate_picks_no_views_returns_empty_summary(monkeypatch) -> None:
+    monkeypatch.setenv("PICK_MIN_BOOKS", "3")
+    get_settings.cache_clear()
+
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        summary = generate_consensus_picks(session, sport_key="basketball_nba", market_key="h2h")
+        assert summary == {
+            "total_views": 0,
+            "candidates": 0,
+            "inserted": 0,
+            "skipped_existing": 0,
+            "skipped_low_ev": 0,
+            "skipped_insufficient_books": 0,
+        }

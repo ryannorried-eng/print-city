@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import and_, desc, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -31,14 +31,6 @@ def generate_consensus_picks(
     views = build_market_views(rows)
 
     results = [compute_consensus_for_view(views[key]) for key in sorted(views.keys())]
-    event_to_game_id = {
-        event_id: game_id
-        for event_id, game_id in session.execute(
-            select(Game.event_id, Game.id).where(
-                Game.event_id.in_([result.event_id for result in results])
-            )
-        ).all()
-    }
 
     summary = {
         "total_views": len(results),
@@ -47,6 +39,17 @@ def generate_consensus_picks(
         "skipped_existing": 0,
         "skipped_low_ev": 0,
         "skipped_insufficient_books": 0,
+    }
+    if not results:
+        return summary
+
+    event_to_game_id = {
+        event_id: game_id
+        for event_id, game_id in session.execute(
+            select(Game.event_id, Game.id).where(
+                Game.event_id.in_([result.event_id for result in results])
+            )
+        ).all()
     }
 
     for result in results:

@@ -4,11 +4,17 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import create_engine
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
 from app.domain.enums import Side
 from app.models import Base, Game, OddsSnapshot
-from app.services.consensus import build_market_views, compute_consensus_for_view, get_latest_group_rows
+from app.services.consensus import (
+    _build_latest_group_rows_stmt,
+    build_market_views,
+    compute_consensus_for_view,
+    get_latest_group_rows,
+)
 
 
 def _insert_game(session: Session, *, event_id: str) -> Game:
@@ -213,3 +219,84 @@ def test_missing_side_excludes_bookmaker_group(monkeypatch) -> None:
         assert result.included_books == 3
         assert result.consensus_probs is not None
         assert result.best_decimal[Side.OVER] == 1.95
+
+
+def test_get_latest_group_rows_handles_null_and_non_null_point(monkeypatch) -> None:
+    monkeypatch.setenv("CONSENSUS_MIN_BOOKS", "2")
+
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        game = _insert_game(session, event_id="evt_5")
+        t0 = datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc)
+
+        for book in ["booka", "bookb"]:
+            _add_snapshot(
+                session,
+                game_id=game.id,
+                captured_at=t0,
+                market_key="h2h",
+                bookmaker=book,
+                side="HOME",
+                point=None,
+                decimal=Decimal("2.00"),
+                fair_prob=Decimal("0.50"),
+            )
+            _add_snapshot(
+                session,
+                game_id=game.id,
+                captured_at=t0,
+                market_key="h2h",
+                bookmaker=book,
+                side="AWAY",
+                point=None,
+                decimal=Decimal("2.00"),
+                fair_prob=Decimal("0.50"),
+            )
+            _add_snapshot(
+                session,
+                game_id=game.id,
+                captured_at=t0,
+                market_key="totals",
+                bookmaker=book,
+                side="OVER",
+                point=Decimal("210.5"),
+                decimal=Decimal("1.95"),
+                fair_prob=Decimal("0.51"),
+            )
+            _add_snapshot(
+                session,
+                game_id=game.id,
+                captured_at=t0,
+                market_key="totals",
+                bookmaker=book,
+                side="UNDER",
+                point=Decimal("210.5"),
+                decimal=Decimal("1.95"),
+                fair_prob=Decimal("0.49"),
+            )
+
+        session.commit()
+
+        h2h_rows = get_latest_group_rows(session, "basketball_nba", "h2h")
+        totals_rows = get_latest_group_rows(session, "basketball_nba", "totals")
+
+        assert h2h_rows
+        assert totals_rows
+        assert any(row.point is None for row in h2h_rows)
+        assert all(row.point is not None for row in totals_rows)
+
+
+def test_latest_group_rows_stmt_reuses_single_point_sentinel_bindparam() -> None:
+    stmt = _build_latest_group_rows_stmt(sport_key="basketball_nba", market_key="h2h")
+    compiled = stmt.compile(dialect=postgresql.dialect())
+    sql = str(compiled)
+
+    assert "point_sentinel" in sql
+    assert "coalesce_" not in sql
+    assert "point_sentinel" in compiled.params
