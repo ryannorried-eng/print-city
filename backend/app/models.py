@@ -101,5 +101,11 @@ class Pick(Base):
     sharp_books: Mapped[int] = mapped_column(Integer, nullable=False)
     captured_at_min: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     captured_at_max: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closing_consensus_prob: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    closing_book_decimal: Mapped[Decimal | None] = mapped_column(Numeric(12, 5), nullable=True)
+    closing_book_implied_prob: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    market_clv: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    book_clv: Mapped[Decimal | None] = mapped_column(Numeric(12, 8), nullable=True)
+    clv_computed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     game: Mapped[Game] = relationship(back_populates="picks")
