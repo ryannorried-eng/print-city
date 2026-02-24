@@ -58,7 +58,11 @@ def _int_env(name: str, default: int) -> int:
 
 @lru_cache
 def get_settings() -> Settings:
-    consensus_min_books = _int_env("CONSENSUS_MIN_BOOKS", 3)
+    # Conservative defaults:
+    # - prioritize hit-rate and market-confirmed edges
+    # - require wider bookmaker coverage
+    # - quarter-Kelly sizing for risk control
+    consensus_min_books = _int_env("CONSENSUS_MIN_BOOKS", 5)
     return Settings(
         app_name=os.getenv("APP_NAME", "print-city-backend"),
         app_env=os.getenv("APP_ENV", "development"),
