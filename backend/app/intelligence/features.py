@@ -51,50 +51,50 @@ def _opposite_side(side: Side) -> Side:
     return Side.OVER
 
 
-def compute_price_dispersion(*, side: Side, book_odds: dict[str, dict[Side, float]]) -> float:
-    probabilities: list[float] = []
+def build_dispersion_inputs(
+    *,
+    side: Side,
+    book_odds: dict[str, dict[Side, float]],
+) -> tuple[dict[str, float], dict[str, float]]:
     opposite = _opposite_side(side)
-    contributing_odds: list[dict[str, float | str]] = []
+    odds_by_book: dict[str, float] = {}
+    other_side_odds_by_book: dict[str, float] = {}
 
-    for book in sorted(book_odds.keys()):
-        per_book = book_odds[book]
-        side_decimal = per_book.get(side)
-        if side_decimal is None or side_decimal <= 1.0:
+    for book, per_book in sorted(book_odds.items()):
+        candidate_decimal = per_book.get(side)
+        opposite_decimal = per_book.get(opposite)
+        if (
+            candidate_decimal is None
+            or opposite_decimal is None
+            or candidate_decimal <= 1.0
+            or opposite_decimal <= 1.0
+        ):
             continue
+        odds_by_book[book] = candidate_decimal
+        other_side_odds_by_book[book] = opposite_decimal
+
+    return odds_by_book, other_side_odds_by_book
+
+
+def compute_price_dispersion(*, odds_by_book: dict[str, float], other_side_odds_by_book: dict[str, float]) -> float:
+    probabilities: list[float] = []
+
+    common_books = sorted(set(odds_by_book).intersection(other_side_odds_by_book))
+    for book in common_books:
+        side_decimal = odds_by_book[book]
+        opposite_decimal = other_side_odds_by_book[book]
 
         side_implied = 1.0 / side_decimal
-        opposite_decimal = per_book.get(opposite)
-        if opposite_decimal is not None and opposite_decimal > 1.0:
-            opposite_implied = 1.0 / opposite_decimal
-            side_implied = remove_vig([side_implied, opposite_implied])[0]
-
-        clamped = _clamp(side_implied)
-        probabilities.append(clamped)
-        contributing_odds.append(
-            {
-                "book": book,
-                "side_decimal": side_decimal,
-                "opposite_decimal": opposite_decimal if opposite_decimal is not None else float("nan"),
-                "fair_prob": clamped,
-            }
-        )
+        opposite_implied = 1.0 / opposite_decimal
+        fair_side_prob = remove_vig([side_implied, opposite_implied])[0]
+        probabilities.append(_clamp(fair_side_prob))
 
     if len(probabilities) < 3:
         return 1.0
 
     ordered = sorted(probabilities)
     dispersion = _percentile(ordered, 0.9) - _percentile(ordered, 0.1)
-    dispersion = _clamp(dispersion)
-
-    if dispersion > 0.25:
-        logger.warning(
-            "High price dispersion detected: side=%s dispersion=%.6f details=%s",
-            side.value,
-            dispersion,
-            contributing_odds,
-        )
-
-    return dispersion
+    return _clamp(dispersion)
 
 
 def compute_features(
@@ -107,9 +107,19 @@ def compute_features(
     best_decimal: float,
     side_consensus_prob: float,
     now_utc: datetime,
+    pick_id: int | None = None,
 ) -> PickFeatures:
     consensus_implied = side_consensus_prob
-    dispersion = compute_price_dispersion(side=side, book_odds=per_book_odds)
+    odds_by_book, other_side_odds_by_book = build_dispersion_inputs(side=side, book_odds=per_book_odds)
+    dispersion = compute_price_dispersion(odds_by_book=odds_by_book, other_side_odds_by_book=other_side_odds_by_book)
+    if dispersion > 0.25:
+        logger.warning(
+            "High price dispersion detected: pick_id=%s candidate_side=%s odds_by_book=%s other_side_odds_by_book=%s",
+            pick_id,
+            side.value,
+            {book: odds_by_book[book] for book in sorted(odds_by_book)},
+            {book: other_side_odds_by_book[book] for book in sorted(other_side_odds_by_book)},
+        )
     agreement = max(0.0, min(1.0, 1.0 - (dispersion / 0.5)))
     commence_time = result.commence_time if result.commence_time.tzinfo is not None else result.commence_time.replace(tzinfo=timezone.utc)
     return PickFeatures(

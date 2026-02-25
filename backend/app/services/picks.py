@@ -137,6 +137,7 @@ def generate_consensus_picks(session: Session, sport_key: str, market_key: str, 
                 best_decimal=best_decimal,
                 side_consensus_prob=probability,
                 now_utc=now_utc,
+                pick_id=pick.id,
             )
             pqs_result = score_pick(features=features, settings=settings, prior=prior)
             summary["scored"] += 1

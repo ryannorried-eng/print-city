@@ -85,41 +85,19 @@ def _build_latest_group_rows_stmt(sport_key: str, market_key: str):
     sentinel = bindparam("point_sentinel", POINT_SENTINEL, type_=Numeric())
     point_key_expr = func.coalesce(OddsSnapshot.point, sentinel)
 
-    per_timestamp_subq = (
+    latest_market_snapshot_subq = (
         select(
             OddsSnapshot.game_id.label("game_id"),
             OddsSnapshot.market_key.label("market_key"),
-            OddsSnapshot.bookmaker.label("bookmaker"),
             point_key_expr.label("point_key"),
-            OddsSnapshot.captured_at.label("captured_at"),
-            func.count(func.distinct(OddsSnapshot.side)).label("side_count"),
+            func.max(OddsSnapshot.captured_at).label("captured_at"),
         )
         .join(Game, Game.id == OddsSnapshot.game_id)
         .where(Game.sport_key == sport_key, OddsSnapshot.market_key == market.value)
         .group_by(
             OddsSnapshot.game_id,
             OddsSnapshot.market_key,
-            OddsSnapshot.bookmaker,
             point_key_expr,
-            OddsSnapshot.captured_at,
-        )
-        .subquery()
-    )
-
-    latest_complete_subq = (
-        select(
-            per_timestamp_subq.c.game_id,
-            per_timestamp_subq.c.market_key,
-            per_timestamp_subq.c.bookmaker,
-            per_timestamp_subq.c.point_key,
-            func.max(per_timestamp_subq.c.captured_at).label("captured_at"),
-        )
-        .where(per_timestamp_subq.c.side_count >= 2)
-        .group_by(
-            per_timestamp_subq.c.game_id,
-            per_timestamp_subq.c.market_key,
-            per_timestamp_subq.c.bookmaker,
-            per_timestamp_subq.c.point_key,
         )
         .subquery()
     )
@@ -128,13 +106,12 @@ def _build_latest_group_rows_stmt(sport_key: str, market_key: str):
         select(Game, OddsSnapshot)
         .join(OddsSnapshot, OddsSnapshot.game_id == Game.id)
         .join(
-            latest_complete_subq,
+            latest_market_snapshot_subq,
             and_(
-                OddsSnapshot.game_id == latest_complete_subq.c.game_id,
-                OddsSnapshot.market_key == latest_complete_subq.c.market_key,
-                OddsSnapshot.bookmaker == latest_complete_subq.c.bookmaker,
-                point_key_expr == latest_complete_subq.c.point_key,
-                OddsSnapshot.captured_at == latest_complete_subq.c.captured_at,
+                OddsSnapshot.game_id == latest_market_snapshot_subq.c.game_id,
+                OddsSnapshot.market_key == latest_market_snapshot_subq.c.market_key,
+                point_key_expr == latest_market_snapshot_subq.c.point_key,
+                OddsSnapshot.captured_at == latest_market_snapshot_subq.c.captured_at,
             ),
         )
         .where(Game.sport_key == sport_key, OddsSnapshot.market_key == market.value)
@@ -265,8 +242,9 @@ def compute_consensus_for_view(view: MarketView) -> ConsensusResult:
 
     best_decimal: dict[Side, float] = {}
     best_book: dict[Side, str] = {}
+    included_book_set = set(included_books)
     for row in view.rows:
-        if row.decimal is None:
+        if row.bookmaker not in included_book_set or row.decimal is None:
             continue
         dec = float(row.decimal)
         existing = best_decimal.get(row.side)
