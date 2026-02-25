@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import and_, desc, select
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -334,3 +335,66 @@ def list_pick_scores(
         }
         for score, pick, game in rows
     ]
+
+
+def list_recommended_picks(
+    session: Session,
+    *,
+    sport_key: str | None,
+    market_key: str | None,
+    limit: int,
+) -> list[dict[str, object]]:
+    latest_score_id = (
+        select(PickScore.id)
+        .where(PickScore.pick_id == Pick.id)
+        .order_by(desc(PickScore.scored_at), desc(PickScore.id))
+        .limit(1)
+        .scalar_subquery()
+    )
+
+    latest_score = aliased(PickScore)
+    stmt = (
+        select(Pick, Game, latest_score)
+        .join(Game, Pick.game_id == Game.id)
+        .join(latest_score, latest_score.id == latest_score_id)
+        .where(latest_score.decision == PickScoreDecision.KEEP.value)
+        .order_by(desc(Pick.created_at), desc(Pick.id))
+        .limit(limit)
+    )
+    if sport_key:
+        stmt = stmt.where(Game.sport_key == sport_key)
+    if market_key:
+        stmt = stmt.where(Pick.market_key == market_key)
+
+    rows = session.execute(stmt).all()
+    output: list[dict[str, object]] = []
+    for pick, game, score in rows:
+        features = score.features_json if isinstance(score.features_json, dict) else {}
+        book_count = int(features.get("book_count", pick.consensus_books))
+        sharp_book_count = int(features.get("sharp_book_count", pick.sharp_books))
+        price_dispersion = float(features.get("price_dispersion", 0.0))
+        time_to_start_minutes = float(features.get("time_to_start_minutes", 0.0))
+        best_vs_consensus_edge = float(features.get("best_vs_consensus_edge", 0.0))
+        why = (
+            f"PQS {float(score.pqs):.2f} | EV {float(pick.ev):.2f} | Books {book_count} "
+            f"| Disp {price_dispersion:.2f} | Starts {time_to_start_minutes / 60.0:.1f}h"
+        )
+        output.append(
+            {
+                "pick_id": pick.id,
+                "sport_key": game.sport_key,
+                "market_key": pick.market_key,
+                "side": pick.side,
+                "point": float(pick.point) if pick.point is not None else None,
+                "created_at": pick.created_at,
+                "pqs": float(score.pqs),
+                "ev": float(pick.ev),
+                "book_count": book_count,
+                "sharp_book_count": sharp_book_count,
+                "price_dispersion": price_dispersion,
+                "time_to_start_minutes": time_to_start_minutes,
+                "best_vs_consensus_edge": best_vs_consensus_edge,
+                "why": why,
+            }
+        )
+    return output
