@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import logging
 
 from app.core.math import remove_vig
 from app.domain.enums import Side
 from app.services.consensus import ConsensusResult
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,7 @@ def _opposite_side(side: Side) -> Side:
 def compute_price_dispersion(*, side: Side, book_odds: dict[str, dict[Side, float]]) -> float:
     probabilities: list[float] = []
     opposite = _opposite_side(side)
+    contributing_odds: list[dict[str, float | str]] = []
 
     for book in sorted(book_odds.keys()):
         per_book = book_odds[book]
@@ -64,14 +68,33 @@ def compute_price_dispersion(*, side: Side, book_odds: dict[str, dict[Side, floa
             opposite_implied = 1.0 / opposite_decimal
             side_implied = remove_vig([side_implied, opposite_implied])[0]
 
-        probabilities.append(_clamp(side_implied))
+        clamped = _clamp(side_implied)
+        probabilities.append(clamped)
+        contributing_odds.append(
+            {
+                "book": book,
+                "side_decimal": side_decimal,
+                "opposite_decimal": opposite_decimal if opposite_decimal is not None else float("nan"),
+                "fair_prob": clamped,
+            }
+        )
 
     if len(probabilities) < 3:
         return 1.0
 
     ordered = sorted(probabilities)
     dispersion = _percentile(ordered, 0.9) - _percentile(ordered, 0.1)
-    return _clamp(dispersion)
+    dispersion = _clamp(dispersion)
+
+    if dispersion > 0.25:
+        logger.warning(
+            "High price dispersion detected: side=%s dispersion=%.6f details=%s",
+            side.value,
+            dispersion,
+            contributing_odds,
+        )
+
+    return dispersion
 
 
 def compute_features(

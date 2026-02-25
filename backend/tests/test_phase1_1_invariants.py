@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timezone
+import pytest
 import sys
 from types import SimpleNamespace
 
@@ -159,6 +160,62 @@ def test_identical_payload_second_ingest_has_zero_changes(monkeypatch) -> None:
 
         game = session.query(Game).filter_by(event_id="evt_1").one()
         assert game is not None
+
+
+def test_spreads_pairing_by_absolute_point_devigs_to_one(monkeypatch) -> None:
+    payload = [
+        {
+            "id": "evt_spread_1",
+            "sport_key": "basketball_nba",
+            "commence_time": "2025-01-04T00:30:00Z",
+            "home_team": "Boston Celtics",
+            "away_team": "Miami Heat",
+            "bookmakers": [
+                {
+                    "key": "fanduel",
+                    "markets": [
+                        {
+                            "key": "spreads",
+                            "outcomes": [
+                                {"name": "Boston Celtics", "price": -110, "point": -4.5},
+                                {"name": "Miami Heat", "price": -110, "point": 4.5},
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+
+    monkeypatch.setenv("ODDS_SPORTS_WHITELIST", "basketball_nba")
+    monkeypatch.setenv("ODDS_MARKETS", "spreads")
+
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+    def fake_fetch_odds(*, sport_key, markets, regions, odds_format):
+        assert sport_key == "basketball_nba"
+        assert set(markets) == {"spreads"}
+        return payload, {"headers": {}, "fetched_at": "2025-01-04T00:00:00Z"}
+
+    monkeypatch.setitem(sys.modules, "app.integrations.odds_api", SimpleNamespace(fetch_odds=fake_fetch_odds))
+    monkeypatch.setattr("app.services.ingest.record_quota", lambda *_args, **_kwargs: None)
+
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        summary = ingest_odds_for_sport(session=session, sport_key="basketball_nba")
+        assert summary["groups_changed"] == 1
+        assert summary["snapshot_rows_inserted"] == 2
+
+        rows = session.query(OddsSnapshot).all()
+        assert len(rows) == 2
+        fair_probs = sorted(float(row.fair_prob) for row in rows)
+        assert sum(fair_probs) == pytest.approx(1.0)
+        assert fair_probs[0] == pytest.approx(0.5)
+        assert fair_probs[1] == pytest.approx(0.5)
 
 
 def test_datetime_columns_are_timezone_aware() -> None:

@@ -78,6 +78,15 @@ def test_price_dispersion_tight_market_is_small() -> None:
     assert 0.0 <= dispersion < 0.05
 
 
+def test_price_dispersion_realistic_h2h_market_below_gate() -> None:
+    odds = _market_odds(
+        home_decimals=[1.86, 1.89, 1.91, 1.88, 1.90, 1.87],
+        away_decimals=[2.02, 1.99, 1.97, 2.00, 1.98, 2.01],
+    )
+    dispersion = compute_price_dispersion(side=Side.HOME, book_odds=odds)
+    assert 0.0 <= dispersion < 0.15
+
+
 def test_price_dispersion_noisy_market_is_large() -> None:
     odds = _market_odds(
         home_decimals=[1.70, 1.82, 1.95, 2.15, 2.35, 2.60],

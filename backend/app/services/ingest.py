@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -15,6 +16,8 @@ from app.config import get_settings
 from app.core.math import american_to_decimal, american_to_implied_prob, remove_vig
 from app.domain.enums import Side
 from app.services.quota import record_quota
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_side(event_home: str, event_away: str, market_key: str, outcome_name: str) -> Side:
@@ -87,6 +90,14 @@ def sort_group_key(event_id: str, group_key: tuple[str, str, float | None]) -> t
     return (event_id, market_key, bookmaker, float("-inf") if point is None else point)
 
 
+def canonical_group_point(market_key: str, point: float | None) -> float | None:
+    if point is None:
+        return None
+    if market_key.lower() == "spreads":
+        return abs(float(point))
+    return float(point)
+
+
 def ingest_odds_for_sport(session: "Session", sport_key: str) -> dict:
     from sqlalchemy import select
 
@@ -155,16 +166,17 @@ def ingest_odds_for_sport(session: "Session", sport_key: str) -> dict:
                             outcome_name=outcome["name"],
                         )
                         point = outcome.get("point")
+                        canonical_point = canonical_group_point(market_key, point)
                         american = outcome.get("price")
                         decimal = american_to_decimal(american) if american is not None else None
                         implied = american_to_implied_prob(american) if american is not None else None
-                        grouped_outcomes[(market_key, bookmaker_key, point)].append(
+                        grouped_outcomes[(market_key, bookmaker_key, canonical_point)].append(
                             {
                                 "side": side.value,
                                 "american": american,
                                 "decimal": decimal,
                                 "implied_prob": implied,
-                                "point": point,
+                                "point": canonical_point,
                             }
                         )
 
@@ -194,6 +206,30 @@ def ingest_odds_for_sport(session: "Session", sport_key: str) -> dict:
 
                     implied_probs = [sp["implied_prob"] for sp in side_prices if sp["implied_prob"] is not None]
                     fair_probs = compute_fair_probs_for_group(implied_probs)
+
+                    side_to_fair_prob = {
+                        side_price["side"]: fair_prob
+                        for side_price, fair_prob in zip(side_prices, fair_probs, strict=True)
+                    }
+                    required_opposite = {
+                        Side.HOME.value: Side.AWAY.value,
+                        Side.AWAY.value: Side.HOME.value,
+                        Side.OVER.value: Side.UNDER.value,
+                        Side.UNDER.value: Side.OVER.value,
+                    }
+                    for side_value, opposite_side in required_opposite.items():
+                        if side_value in side_to_fair_prob and opposite_side in side_to_fair_prob and side_to_fair_prob[side_value] > 0.95:
+                            logger.warning(
+                                "Suspicious fair_prob in ingestion: event_id=%s market_key=%s bookmaker=%s point=%s side=%s fair_prob=%.6f opposite_side=%s opposite_fair_prob=%.6f",
+                                event["id"],
+                                market_key,
+                                bookmaker,
+                                point,
+                                side_value,
+                                side_to_fair_prob[side_value],
+                                opposite_side,
+                                side_to_fair_prob[opposite_side],
+                            )
 
                     for side_price, fair_prob in zip(side_prices, fair_probs, strict=True):
                         snapshot = OddsSnapshot(
