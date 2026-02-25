@@ -7,7 +7,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.domain.enums import MarketKey
 from app.services.market_unlock import enforce_market_allowed
-from app.services.picks import generate_consensus_picks, list_picks
+from app.services.picks import generate_consensus_picks, list_picks, list_recommended_picks
 
 router = APIRouter(tags=["picks"])
 
@@ -56,5 +56,20 @@ def latest_picks(
         sport_key=sport_key,
         market_key=market_key.value if market_key is not None else None,
         date=date,
+        limit=limit,
+    )
+
+
+@router.get("/picks/recommended")
+def recommended_picks(
+    sport_key: str | None = Query(None),
+    market_key: MarketKey | None = Query(None),
+    limit: int = Query(20, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> list[dict[str, object]]:
+    return list_recommended_picks(
+        session=db,
+        sport_key=sport_key,
+        market_key=market_key.value if market_key is not None else None,
         limit=limit,
     )
