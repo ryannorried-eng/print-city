@@ -142,7 +142,7 @@ def get_settings() -> Settings:
         run_max_picks_total=_int_env("RUN_MAX_PICKS_TOTAL", 8),
         min_books=_int_env("MIN_BOOKS", 6),
         sharp_book_min=_int_env("SHARP_BOOK_MIN", 1),
-        max_price_dispersion=_float_env("MAX_PRICE_DISPERSION", 0.08),
+        max_price_dispersion=_float_env("MAX_PRICE_DISPERSION", 0.12),
         min_agreement=_float_env("MIN_AGREEMENT", 0.60),
         min_minutes_to_start=_int_env("MIN_MINUTES_TO_START", 15),
         time_decay_half_life_min=_int_env("TIME_DECAY_HALF_LIFE_MIN", 240),

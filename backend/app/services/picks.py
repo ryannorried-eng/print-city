@@ -56,6 +56,11 @@ def generate_consensus_picks(session: Session, sport_key: str, market_key: str, 
 
     now_utc = datetime.now(timezone.utc)
     for result in results:
+        view_key = (result.event_id, result.market_key, result.point)
+        market_view = views.get(view_key)
+        if market_view is None:
+            continue
+
         if result.consensus_probs is None or result.included_books < settings.pick_min_books:
             summary["skipped_insufficient_books"] += 1
             continue
@@ -123,10 +128,10 @@ def generate_consensus_picks(session: Session, sport_key: str, market_key: str, 
                 new_pick_ids.add(pick.id)
 
             prior = get_latest_prior(session, sport_key=sport_key, market_key=market_key, window_size=settings.clv_prior_window)
-            side_probs = [float(v) for v in result.consensus_probs.values()]
             features = compute_features(
                 result=result,
-                side_probabilities=side_probs,
+                side=side,
+                per_book_odds=market_view.book_odds,
                 ev=ev,
                 kelly_fraction=kelly,
                 best_decimal=best_decimal,
