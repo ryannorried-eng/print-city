@@ -44,12 +44,19 @@ class Settings:
     clv_min_n_for_prior: int
     sport_default_min_pqs: float
     sport_default_max_picks: int
+    ncaab_default_max_picks: int
     run_max_picks_total: int
     min_books: int
     sharp_book_min: int
     max_price_dispersion: float
+    max_price_dispersion_book_count_8: float
+    max_price_dispersion_sharp_ev: float
+    max_price_dispersion_hard_ceiling: float
     min_agreement: float
     min_minutes_to_start: int
+    min_minutes_to_start_relaxed: int
+    min_minutes_to_start_relaxed_min_books: int
+    min_minutes_to_start_relaxed_max_dispersion: float
     time_decay_half_life_min: int
     ev_floor: float
     kelly_cap: float
@@ -139,12 +146,19 @@ def get_settings() -> Settings:
         clv_min_n_for_prior=_int_env("CLV_MIN_N_FOR_PRIOR", 30),
         sport_default_min_pqs=_float_env("SPORT_DEFAULT_MIN_PQS", 0.65),
         sport_default_max_picks=_int_env("SPORT_DEFAULT_MAX_PICKS", 3),
+        ncaab_default_max_picks=_int_env("NCAAB_DEFAULT_MAX_PICKS", 8),
         run_max_picks_total=_int_env("RUN_MAX_PICKS_TOTAL", 8),
         min_books=_int_env("MIN_BOOKS", 6),
         sharp_book_min=_int_env("SHARP_BOOK_MIN", 1),
         max_price_dispersion=_float_env("MAX_PRICE_DISPERSION", 0.12),
+        max_price_dispersion_book_count_8=_float_env("MAX_PRICE_DISPERSION_BOOK_COUNT_8", 0.18),
+        max_price_dispersion_sharp_ev=_float_env("MAX_PRICE_DISPERSION_SHARP_EV", 0.24),
+        max_price_dispersion_hard_ceiling=_float_env("MAX_PRICE_DISPERSION_HARD_CEILING", 0.30),
         min_agreement=_float_env("MIN_AGREEMENT", 0.60),
-        min_minutes_to_start=_int_env("MIN_MINUTES_TO_START", 15),
+        min_minutes_to_start=_int_env("MIN_MINUTES_TO_START", 30),
+        min_minutes_to_start_relaxed=_int_env("MIN_MINUTES_TO_START_RELAXED", 15),
+        min_minutes_to_start_relaxed_min_books=_int_env("MIN_MINUTES_TO_START_RELAXED_MIN_BOOKS", 8),
+        min_minutes_to_start_relaxed_max_dispersion=_float_env("MIN_MINUTES_TO_START_RELAXED_MAX_DISPERSION", 0.10),
         time_decay_half_life_min=_int_env("TIME_DECAY_HALF_LIFE_MIN", 240),
         ev_floor=_float_env("EV_FLOOR", 0.0),
         kelly_cap=_float_env("KELLY_CAP", 0.01),
