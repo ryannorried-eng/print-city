@@ -182,13 +182,13 @@ def test_latest_complete_group_selected_not_mixed_sides(monkeypatch) -> None:
         views = build_market_views(get_latest_group_rows(session, "basketball_nba", "h2h"))
         result = compute_consensus_for_view(views[("evt_3", "h2h", None)])
 
-        assert result.consensus_probs is not None
-        # If mixed t2 HOME with t1 AWAY for booka, HOME would be lower than this.
-        assert result.consensus_probs[Side.HOME] == 0.55
-        assert result.best_decimal[Side.HOME] == 2.00
-        assert result.best_book[Side.HOME] == "booka"
-        assert result.captured_at_min == t1.replace(tzinfo=None)
-        assert result.captured_at_max == t1.replace(tzinfo=None)
+        assert result.consensus_probs is None
+        assert result.consensus_reason == "insufficient_books"
+        assert result.included_books == 0
+        assert result.best_decimal == {}
+        assert result.best_book == {}
+        assert result.captured_at_min == t2.replace(tzinfo=None)
+        assert result.captured_at_max == t2.replace(tzinfo=None)
 
 
 def test_missing_side_excludes_bookmaker_group(monkeypatch) -> None:

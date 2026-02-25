@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.domain.enums import Side
-from app.intelligence.features import PickFeatures, compute_price_dispersion
+from app.intelligence.features import PickFeatures, build_dispersion_inputs, compute_price_dispersion
 from app.intelligence.pqs import score_pick
 from app.intelligence.priors import recompute_clv_sport_stats
 from app.models import Base, ClvSportStat, Game, OddsSnapshot, Pick
@@ -74,7 +74,8 @@ def test_price_dispersion_tight_market_is_small() -> None:
         home_decimals=[2.00, 2.01, 1.99, 2.02, 2.00, 1.98],
         away_decimals=[1.99, 1.98, 2.00, 1.97, 1.99, 2.01],
     )
-    dispersion = compute_price_dispersion(side=Side.HOME, book_odds=odds)
+    odds_by_book, other_side_odds_by_book = build_dispersion_inputs(side=Side.HOME, book_odds=odds)
+    dispersion = compute_price_dispersion(odds_by_book=odds_by_book, other_side_odds_by_book=other_side_odds_by_book)
     assert 0.0 <= dispersion < 0.05
 
 
@@ -83,7 +84,8 @@ def test_price_dispersion_realistic_h2h_market_below_gate() -> None:
         home_decimals=[1.86, 1.89, 1.91, 1.88, 1.90, 1.87],
         away_decimals=[2.02, 1.99, 1.97, 2.00, 1.98, 2.01],
     )
-    dispersion = compute_price_dispersion(side=Side.HOME, book_odds=odds)
+    odds_by_book, other_side_odds_by_book = build_dispersion_inputs(side=Side.HOME, book_odds=odds)
+    dispersion = compute_price_dispersion(odds_by_book=odds_by_book, other_side_odds_by_book=other_side_odds_by_book)
     assert 0.0 <= dispersion < 0.15
 
 
@@ -92,7 +94,8 @@ def test_price_dispersion_noisy_market_is_large() -> None:
         home_decimals=[1.70, 1.82, 1.95, 2.15, 2.35, 2.60],
         away_decimals=[2.25, 2.10, 1.95, 1.75, 1.60, 1.47],
     )
-    dispersion = compute_price_dispersion(side=Side.HOME, book_odds=odds)
+    odds_by_book, other_side_odds_by_book = build_dispersion_inputs(side=Side.HOME, book_odds=odds)
+    dispersion = compute_price_dispersion(odds_by_book=odds_by_book, other_side_odds_by_book=other_side_odds_by_book)
     assert dispersion > 0.15
 
 
@@ -101,9 +104,26 @@ def test_price_dispersion_is_deterministic() -> None:
         home_decimals=[1.88, 1.93, 1.91, 1.95, 1.89, 1.92],
         away_decimals=[2.00, 1.97, 1.99, 1.95, 2.01, 1.98],
     )
-    first = compute_price_dispersion(side=Side.HOME, book_odds=odds)
-    second = compute_price_dispersion(side=Side.HOME, book_odds=odds)
+    odds_by_book, other_side_odds_by_book = build_dispersion_inputs(side=Side.HOME, book_odds=odds)
+    first = compute_price_dispersion(odds_by_book=odds_by_book, other_side_odds_by_book=other_side_odds_by_book)
+    second = compute_price_dispersion(odds_by_book=odds_by_book, other_side_odds_by_book=other_side_odds_by_book)
     assert first == second
+
+
+def test_price_dispersion_extreme_two_way_market_stays_tight_per_side() -> None:
+    odds = _market_odds(
+        home_decimals=[1.01, 1.02, 1.01],
+        away_decimals=[20.00, 19.50, 21.00],
+    )
+
+    home_odds, home_other = build_dispersion_inputs(side=Side.HOME, book_odds=odds)
+    home_dispersion = compute_price_dispersion(odds_by_book=home_odds, other_side_odds_by_book=home_other)
+
+    away_odds, away_other = build_dispersion_inputs(side=Side.AWAY, book_odds=odds)
+    away_dispersion = compute_price_dispersion(odds_by_book=away_odds, other_side_odds_by_book=away_other)
+
+    assert home_dispersion < 0.05
+    assert away_dispersion < 0.05
 
 
 def test_sane_candidate_passes_while_noisy_candidate_drops(monkeypatch) -> None:
