@@ -34,6 +34,28 @@ def _base_summary() -> dict[str, int]:
     }
 
 
+
+
+def _select_final_keep_ids(
+    kept_candidates: list[tuple[float, str, str, str, str, datetime, int, int]],
+    run_max_picks_total: int,
+) -> set[int]:
+    kept_sorted = sorted(
+        kept_candidates,
+        key=lambda item: (-item[0], item[1], item[2], item[3], item[5], item[6]),
+    )
+    per_sport: dict[str, int] = {}
+    final_keep_ids: set[int] = set()
+    for _pqs, sport, _market, _event, _side, _created_at, pick_id, adaptive_max_picks in kept_sorted:
+        max_sport = max(1, adaptive_max_picks)
+        if per_sport.get(sport, 0) >= max_sport:
+            continue
+        if len(final_keep_ids) >= run_max_picks_total:
+            break
+        per_sport[sport] = per_sport.get(sport, 0) + 1
+        final_keep_ids.add(pick_id)
+    return final_keep_ids
+
 def generate_consensus_picks(session: Session, sport_key: str, market_key: str, as_of: datetime | None = None) -> dict[str, int]:
     settings = get_settings()
     rows = get_latest_group_rows(session=session, sport_key=sport_key, market_key=market_key)
@@ -51,7 +73,7 @@ def generate_consensus_picks(session: Session, sport_key: str, market_key: str, 
         ).all()
     }
 
-    kept_candidates: list[tuple[float, str, str, str, str, Pick, dict[str, float], dict[str, float | int | str | None], str | None]] = []
+    kept_candidates: list[tuple[float, str, str, str, str, datetime, int, int]] = []
     new_pick_ids: set[int] = set()
 
     now_utc = datetime.now(timezone.utc)
@@ -139,11 +161,11 @@ def generate_consensus_picks(session: Session, sport_key: str, market_key: str, 
                 now_utc=now_utc,
                 pick_id=pick.id,
             )
-            pqs_result = score_pick(features=features, settings=settings, prior=prior)
+            pqs_result = score_pick(features=features, settings=settings, prior=prior, sport_key=sport_key)
             summary["scored"] += 1
 
             components = dict(pqs_result.components)
-            min_pqs, max_picks = adaptive_thresholds(settings, prior)
+            min_pqs, max_picks = adaptive_thresholds(settings, prior, sport_key=sport_key)
             components["adaptive_min_pqs"] = min_pqs
             components["adaptive_max_picks"] = float(max_picks)
 
@@ -183,33 +205,26 @@ def generate_consensus_picks(session: Session, sport_key: str, market_key: str, 
                         result.market_key,
                         result.event_id,
                         side.value,
-                        pick,
-                        components,
-                        {},
-                        pqs_result.drop_reason,
+                        pick.created_at,
+                        pick.id,
+                        int(components.get("adaptive_max_picks", settings.sport_default_max_picks)),
                     )
                 )
             else:
                 summary["dropped"] += 1
 
-    kept_sorted = sorted(kept_candidates, key=lambda item: (-item[0], item[1], item[2], item[3], item[4], item[5].id))
-    per_sport: dict[str, int] = {}
-    final_keep_ids: set[int] = set()
-    for _, sport, _market, _event, _side, pick, _components, _features, _dr in kept_sorted:
-        max_sport = settings.sport_default_max_picks
-        if per_sport.get(sport, 0) >= max_sport:
-            continue
-        if len(final_keep_ids) >= settings.run_max_picks_total:
-            break
-        per_sport[sport] = per_sport.get(sport, 0) + 1
-        final_keep_ids.add(pick.id)
+    final_keep_ids = _select_final_keep_ids(kept_candidates, settings.run_max_picks_total)
 
     if settings.pqs_enabled:
-        for item in kept_sorted:
-            pick = item[5]
-            if pick.id not in final_keep_ids:
+        throttled_candidates = sorted(
+            kept_candidates,
+            key=lambda item: (-item[0], item[1], item[2], item[3], item[5], item[6]),
+        )
+        for item in throttled_candidates:
+            pick_id = item[6]
+            if pick_id not in final_keep_ids:
                 score_row = session.execute(
-                    select(PickScore).where(PickScore.pick_id == pick.id, PickScore.version == settings.pqs_version)
+                    select(PickScore).where(PickScore.pick_id == pick_id, PickScore.version == settings.pqs_version)
                 ).scalars().first()
                 if score_row is not None:
                     score_row.decision = PickScoreDecision.DROP.value

@@ -12,7 +12,7 @@ from app.intelligence.features import PickFeatures, build_dispersion_inputs, com
 from app.intelligence.pqs import score_pick
 from app.intelligence.priors import recompute_clv_sport_stats
 from app.models import Base, ClvSportStat, Game, OddsSnapshot, Pick
-from app.services.picks import generate_consensus_picks
+from app.services.picks import _select_final_keep_ids, generate_consensus_picks
 
 
 def _seed_market(session: Session, event_id: str, commence_delta_min: int = 180) -> None:
@@ -151,3 +151,103 @@ def test_sane_candidate_passes_while_noisy_candidate_drops(monkeypatch) -> None:
     assert sane_result.decision.value in {"KEEP", "WARN"}
     assert noisy_result.decision.value == "DROP"
     assert noisy_result.drop_reason == "max_price_dispersion"
+
+
+def test_adaptive_dispersion_allows_book_count_8_market(monkeypatch) -> None:
+    monkeypatch.delenv("MAX_PRICE_DISPERSION", raising=False)
+    monkeypatch.setenv("SPORT_DEFAULT_MIN_PQS", "0.0")
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    features = PickFeatures(
+        ev=0.03,
+        kelly_fraction=0.01,
+        book_count=8,
+        sharp_book_count=1,
+        agreement_strength=0.9,
+        price_dispersion=0.16,
+        best_vs_consensus_edge=0.02,
+        time_to_start_minutes=180.0,
+        market_liquidity_proxy=12.0,
+    )
+    result = score_pick(features=features, settings=settings, prior=None)
+
+    assert result.decision.value == "KEEP"
+
+
+def test_adaptive_dispersion_allows_sharp_high_ev_market(monkeypatch) -> None:
+    monkeypatch.setenv("SPORT_DEFAULT_MIN_PQS", "0.0")
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    features = PickFeatures(
+        ev=0.06,
+        kelly_fraction=0.01,
+        book_count=8,
+        sharp_book_count=2,
+        agreement_strength=0.9,
+        price_dispersion=0.24,
+        best_vs_consensus_edge=0.02,
+        time_to_start_minutes=180.0,
+        market_liquidity_proxy=12.0,
+    )
+    result = score_pick(features=features, settings=settings, prior=None)
+
+    assert result.decision.value == "KEEP"
+
+
+def test_adaptive_dispersion_hard_ceiling_always_drops(monkeypatch) -> None:
+    monkeypatch.setenv("SPORT_DEFAULT_MIN_PQS", "0.0")
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    features = PickFeatures(
+        ev=0.10,
+        kelly_fraction=0.01,
+        book_count=12,
+        sharp_book_count=3,
+        agreement_strength=0.9,
+        price_dispersion=0.31,
+        best_vs_consensus_edge=0.02,
+        time_to_start_minutes=180.0,
+        market_liquidity_proxy=12.0,
+    )
+    result = score_pick(features=features, settings=settings, prior=None)
+
+    assert result.decision.value == "DROP"
+    assert result.drop_reason == "max_price_dispersion"
+
+
+def test_adaptive_min_minutes_to_start_relaxes_for_tight_well_covered_market(monkeypatch) -> None:
+    monkeypatch.setenv("SPORT_DEFAULT_MIN_PQS", "0.0")
+    get_settings.cache_clear()
+    settings = get_settings()
+
+    features = PickFeatures(
+        ev=0.03,
+        kelly_fraction=0.01,
+        book_count=8,
+        sharp_book_count=1,
+        agreement_strength=0.9,
+        price_dispersion=0.05,
+        best_vs_consensus_edge=0.02,
+        time_to_start_minutes=20.0,
+        market_liquidity_proxy=12.0,
+    )
+    result = score_pick(features=features, settings=settings, prior=None)
+
+    assert result.decision.value == "KEEP"
+
+
+def test_cap_throttle_deterministically_keeps_top_n_by_pqs() -> None:
+    now = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    kept_candidates = [
+        (0.91, "basketball_ncaab", "h2h", "evt-1", "HOME", now, 101, 2),
+        (0.85, "basketball_ncaab", "h2h", "evt-2", "HOME", now, 102, 2),
+        (0.85, "basketball_ncaab", "h2h", "evt-2", "AWAY", now, 103, 2),
+        (0.70, "basketball_ncaab", "h2h", "evt-3", "HOME", now, 104, 2),
+    ]
+
+    final_keep_ids = _select_final_keep_ids(kept_candidates, run_max_picks_total=10)
+
+    assert final_keep_ids == {101, 102}

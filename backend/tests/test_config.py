@@ -32,6 +32,9 @@ def test_settings_defaults_for_conservative_mode(monkeypatch) -> None:
     assert settings.sports_autorun == ""
     assert settings.markets_autorun == "h2h"
     assert settings.sched_require_db is True
+    assert settings.min_minutes_to_start == 30
+    assert settings.ncaab_default_max_picks == 8
+    assert settings.max_price_dispersion_sharp_ev == 0.24
 
 
 def test_settings_env_overrides_defaults(monkeypatch) -> None:
